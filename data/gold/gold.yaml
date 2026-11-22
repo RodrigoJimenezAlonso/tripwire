@@ -1,0 +1,29 @@
+# Gold set: questions with the exact answer and the page where it is printed.
+# WRITTEN BY HAND (Rodrigo). Open the PDF, find the figure, copy it exactly.
+# Aim for ~30 items, ~10 per report, mixing:
+#   - headline figures (net income, net sales, CET1 ratio...)
+#   - figures that only appear in tables deep in the financial statements
+#   - "trap" questions where a chart page shows axis numbers close to the real value
+#   - one or two questions whose answer is NOT in the report (expected: the RAG should say so)
+#
+# Fields:
+#   id:        short unique id
+#   doc_id:    swissre-ar-2025 | sika-ar-2025 | ubs-ar-2025
+#   question:  as a user would ask it
+#   answer:    the number as printed (keep units)
+#   value:     the number as a plain float, in the unit given by `unit`
+#   unit:      e.g. "CHF mn", "USD bn", "%"
+#   page:      PDF page number (as shown in the viewer)
+#   notes:     optional (why it is tricky)
+#
+# Example of the FORMAT only (fill in real values yourself):
+# - id: sika-net-sales
+#   doc_id: sika-ar-2025
+#   question: What were Sika's consolidated net sales in 2025?
+#   answer: "CHF ... mn"
+#   value: 0.0
+#   unit: CHF mn
+#   page: 0
+#   notes: headline figure; chart on the next page shows nearby axis values
+
+items: []
