@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS runs (
     repeats     INTEGER NOT NULL,
     defenses    TEXT NOT NULL,       -- JSON list
     git_commit  TEXT,
-    note        TEXT
+    note        TEXT,
+    catalog     TEXT NOT NULL DEFAULT 'catalog'
 );
 CREATE TABLE IF NOT EXISTS attack_results (
     run_id      INTEGER NOT NULL REFERENCES runs(id),
@@ -52,6 +53,28 @@ CREATE TABLE IF NOT EXISTS gold_results (
     retrieved   TEXT NOT NULL,
     seconds     REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS judgements (
+    run_id      INTEGER NOT NULL,
+    defense     TEXT NOT NULL,
+    attack_id   TEXT NOT NULL,
+    repeat      INTEGER NOT NULL,
+    judge_model TEXT NOT NULL,
+    purpose     TEXT NOT NULL,       -- mixed (decides the outcome) | audit (flags detector
+                                     -- misses) | calibration (known positives)
+    verdict     TEXT NOT NULL,       -- succeeded | resisted | unclear
+    reason      TEXT NOT NULL,
+    UNIQUE (run_id, defense, attack_id, repeat, judge_model, purpose)
+);
+CREATE TABLE IF NOT EXISTS human_labels (
+    run_id      INTEGER NOT NULL,
+    defense     TEXT NOT NULL,
+    attack_id   TEXT NOT NULL,
+    repeat      INTEGER NOT NULL,
+    label       TEXT NOT NULL,       -- succeeded | resisted | unclear
+    note        TEXT,
+    labelled_at TEXT NOT NULL,
+    UNIQUE (run_id, defense, attack_id, repeat)
+);
 """
 
 
@@ -72,16 +95,35 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(runs)")}
+        if "catalog" not in cols:  # databases created before held-out catalogs existed
+            self.db.execute("ALTER TABLE runs ADD COLUMN catalog TEXT NOT NULL DEFAULT 'catalog'")
+            self.db.commit()
 
     def new_run(self, model: str, k: int, repeats: int, defenses: list[str],
-                note: str | None = None) -> int:
+                note: str | None = None, catalog: str = "catalog") -> int:
         cur = self.db.execute(
-            "INSERT INTO runs (started_at, model, k, repeats, defenses, git_commit, note) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (started_at, model, k, repeats, defenses, git_commit, note, catalog)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (datetime.now().isoformat(timespec="seconds"), model, k, repeats,
-             json.dumps(defenses), _git_commit(), note))
+             json.dumps(defenses), _git_commit(), note, catalog))
         self.db.commit()
         return cur.lastrowid
+
+    def add_judgement(self, run_id: int, defense: str, attack_id: str, repeat: int,
+                      judge_model: str, purpose: str, verdict: str, reason: str) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO judgements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, defense, attack_id, repeat, judge_model, purpose, verdict, reason))
+        self.db.commit()
+
+    def add_label(self, run_id: int, defense: str, attack_id: str, repeat: int, label: str,
+                  note: str | None = None) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO human_labels VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, defense, attack_id, repeat, label, note,
+             datetime.now().isoformat(timespec="seconds")))
+        self.db.commit()
 
     def add_attack(self, run_id: int, row: dict) -> None:
         self._insert("attack_results", run_id, row,

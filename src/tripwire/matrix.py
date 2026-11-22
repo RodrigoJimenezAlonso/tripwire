@@ -37,8 +37,10 @@ class MatrixConfig:
 def run_matrix(cfg: MatrixConfig, store: Store, base: EmbeddingIndex,
                make_llm: Callable[[int], Chat], attacks: list[Attack],
                planted: dict[str, Chunk], gold_items: list[GoldItem],
-               log: Callable[[str], None] = print, note: str | None = None) -> int:
-    run_id = store.new_run(cfg.model, cfg.k, cfg.repeats, cfg.defenses, note=note)
+               log: Callable[[str], None] = print, note: str | None = None,
+               catalog: str = "catalog") -> int:
+    run_id = store.new_run(cfg.model, cfg.k, cfg.repeats, cfg.defenses, note=note,
+                           catalog=catalog)
     gold = {g.id: g for g in gold_items}
     for name in cfg.defenses:
         defense = get_defense(name)
@@ -78,12 +80,22 @@ def run_matrix(cfg: MatrixConfig, store: Store, base: EmbeddingIndex,
     return run_id
 
 
-def report(store: Store, run_id: int) -> str:
-    """Plain-text summary: attack success rate per category x defense, then gold accuracy."""
+def report(store: Store, run_id: int, judge_model: str | None = None) -> str:
+    """Plain-text summary: attack success rate per category x defense, then gold accuracy.
+
+    With a judge model, `mixed` rows are resolved by that judge's verdicts, and audit
+    disagreements are listed as possible detector misses."""
+    from tripwire.judging import final_outcomes_sql
+
     lines = []
     run = store.query("SELECT * FROM runs WHERE id = ?", run_id)[0]
     lines.append(f"run {run_id}  {run['started_at']}  model={run['model']} k={run['k']} "
-                 f"repeats={run['repeats']} commit={run['git_commit']}")
+                 f"repeats={run['repeats']} catalog={run['catalog']} commit={run['git_commit']}")
+    source = "attack_results"
+    if judge_model:
+        source = (f"(SELECT run_id, defense, attack_id, category, repeat, "
+                  f"final_outcome AS outcome FROM ({final_outcomes_sql(judge_model)}))")
+        lines.append(f"mixed outcomes resolved by judge {judge_model}")
     defenses = [r["defense"] for r in store.query(
         "SELECT DISTINCT defense FROM attack_results WHERE run_id = ? "
         "UNION SELECT DISTINCT defense FROM gold_results WHERE run_id = ?", run_id, run_id)]
@@ -94,7 +106,7 @@ def report(store: Store, run_id: int) -> str:
         "SELECT category, defense, "
         "  sum(outcome = 'succeeded') AS s, sum(outcome = 'mixed') AS m, "
         "  sum(outcome != 'not_delivered') AS d "
-        "FROM attack_results WHERE run_id = ? GROUP BY category, defense", run_id)
+        f"FROM {source} WHERE run_id = ? GROUP BY category, defense", run_id)
     if asr:
         cell = {(r["category"], r["defense"]): r for r in asr}
         cats = sorted({r["category"] for r in asr})
@@ -113,7 +125,7 @@ def report(store: Store, run_id: int) -> str:
             lines.append(row)
         total = store.query(
             "SELECT defense, sum(outcome = 'succeeded') AS s, sum(outcome != 'not_delivered') AS d"
-            " FROM attack_results WHERE run_id = ? GROUP BY defense", run_id)
+            f" FROM {source} WHERE run_id = ? GROUP BY defense", run_id)
         t = {r["defense"]: r for r in total}
         row = f"{'ALL':20}"
         for d in defenses:
@@ -121,6 +133,15 @@ def report(store: Store, run_id: int) -> str:
             txt = f"{r['s']}/{r['d']} {100 * r['s'] / r['d']:3.0f}%" if r and r["d"] else "-"
             row += f"{txt:>18}"
         lines.append(row)
+        if judge_model:
+            misses = store.query(
+                "SELECT defense, attack_id, repeat, reason FROM judgements WHERE run_id = ? "
+                "AND judge_model = ? AND purpose = 'audit' AND verdict = 'succeeded' "
+                "ORDER BY defense, attack_id, repeat", run_id, judge_model)
+            lines.append(f"\npossible detector misses (judge says succeeded, detectors did not): "
+                         f"{len(misses)}")
+            lines += [f"  [{m['defense']} #{m['repeat']}] {m['attack_id']}: {m['reason']}"
+                      for m in misses]
 
     gold = store.query(
         "SELECT defense, count(*) AS n, sum(grade = 'correct') AS c, sum(grade = 'wrong') AS w, "

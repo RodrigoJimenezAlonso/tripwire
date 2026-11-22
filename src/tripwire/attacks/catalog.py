@@ -27,7 +27,10 @@ class Attack:
 
 
 def load_planted(path: Path = HERE / "planted.yaml") -> dict[str, Chunk]:
-    docs = yaml.safe_load(path.read_text(encoding="utf-8"))["docs"]
+    return load_planted_docs(yaml.safe_load(path.read_text(encoding="utf-8"))["docs"])
+
+
+def load_planted_docs(docs: list[dict]) -> dict[str, Chunk]:
     out: dict[str, Chunk] = {}
     for d in docs:
         if d["id"] in out:
@@ -60,6 +63,23 @@ def load_attacks(path: Path = HERE / "catalog.yaml",
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate attack ids")
     return attacks
+
+
+def load_catalog(name: str = "catalog") -> tuple[list[Attack], dict[str, Chunk]]:
+    """Attacks from attacks/<name>.yaml. A catalog may bring its own planted `docs:`, which are
+    added to the shared planted.yaml (ids must not clash)."""
+    path = HERE / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"no attack catalog {path}")
+    planted = load_planted()
+    own = yaml.safe_load(path.read_text(encoding="utf-8")).get("docs")
+    if own:
+        extra = load_planted_docs(own)
+        clash = set(extra) & set(planted)
+        if clash:
+            raise ValueError(f"{name}: planted ids already used in planted.yaml: {sorted(clash)}")
+        planted = {**planted, **extra}
+    return load_attacks(path, planted=planted), planted
 
 
 def is_planted(chunk: Chunk) -> bool:

@@ -89,18 +89,18 @@ def baseline(model: str = "qwen3:8b", k: int = 5,
 @app.command()
 def attack(model: str = "qwen3:8b", k: int = 5,
            only: str = typer.Option(None, help="run a single attack id"),
-           category: str = typer.Option(None, help="run one category only")) -> None:
+           category: str = typer.Option(None, help="run one category only"),
+           catalog: str = typer.Option("catalog", help="attacks/<name>.yaml")) -> None:
     """Run the attack catalog against the undefended RAG."""
     import datetime as dt
 
-    from tripwire.attacks.catalog import load_attacks, load_planted
+    from tripwire.attacks.catalog import load_catalog
     from tripwire.attacks.run import run_suite, summarise, to_dict
     from tripwire.gold import load_gold
     from tripwire.target.index import VectorIndex
     from tripwire.target.llm import OllamaChat
 
-    planted = load_planted()
-    attacks = load_attacks(planted=planted)
+    attacks, planted = load_catalog(catalog)
     if only:
         attacks = [a for a in attacks if a.id == only]
     if category:
@@ -139,9 +139,10 @@ def matrix(defenses: str = typer.Option("all", help="comma-separated, or 'all'")
            attacks_only: bool = False, gold_only: bool = False,
            include_unverified: bool = typer.Option(True, help="gold items not yet hand-checked"),
            model: str = "qwen3:8b", k: int = 5,
+           catalog: str = typer.Option("catalog", help="attacks/<name>.yaml, e.g. heldout"),
            note: str = typer.Option(None, help="free text stored with the run")) -> None:
     """Run every attack under every defense (x repeats) plus the gold set; store in SQLite."""
-    from tripwire.attacks.catalog import load_attacks, load_planted
+    from tripwire.attacks.catalog import load_catalog
     from tripwire.defenses import DEFENSES
     from tripwire.gold import load_gold
     from tripwire.matrix import MatrixConfig, report, run_matrix
@@ -156,27 +157,116 @@ def matrix(defenses: str = typer.Option("all", help="comma-separated, or 'all'")
     cfg = MatrixConfig(model=model, k=k, defenses=names, repeats=repeats,
                        gold_repeats=gold_repeats, run_attacks=not gold_only,
                        run_gold=not attacks_only)
-    planted = load_planted()
+    attacks, planted = load_catalog(catalog)
     store = Store(DB)
     run_id = run_matrix(
         cfg, store, VectorIndex(DATA / "qdrant"), lambda seed: OllamaChat(model=model, seed=seed),
-        load_attacks(planted=planted), planted,
+        attacks, planted,
         load_gold(DATA / "gold" / "gold.yaml", include_unverified=include_unverified),
-        log=typer.echo, note=note)
+        log=typer.echo, note=note, catalog=catalog)
     typer.echo("\n" + report(store, run_id))
 
 
+def _run_id(store, run_id: int | None) -> int:
+    run_id = run_id or store.latest_run()
+    if run_id is None:
+        raise typer.BadParameter("no runs stored yet - run `tripwire matrix` first")
+    return run_id
+
+
 @app.command("report")
-def report_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run")) -> None:
+def report_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run"),
+               judge_model: str = typer.Option(
+                   None, "--judge", help="resolve mixed outcomes with this judge's verdicts")
+               ) -> None:
     """Print the summary tables of a stored matrix run."""
     from tripwire.matrix import report
     from tripwire.storage import Store
 
     store = Store(DB)
-    run_id = run_id or store.latest_run()
-    if run_id is None:
-        raise typer.BadParameter("no runs stored yet - run `tripwire matrix` first")
-    typer.echo(report(store, run_id))
+    typer.echo(report(store, _run_id(store, run_id), judge_model=judge_model))
+
+
+@app.command()
+def judge(run_id: int = typer.Argument(None, help="defaults to the latest run"),
+          judge_model: str = typer.Option("qwen3:8b", "--judge"),
+          audit: bool = typer.Option(
+              False, help="also judge 'resisted' answers to find detector misses"),
+          calibrate_judge: bool = typer.Option(
+              False, "--calibrate", help="also judge answers a detector proved succeeded, "
+              "to measure how lenient the judge is")) -> None:
+    """LLM judge: decide 'mixed' outcomes (and audit 'resisted' ones) of a stored run."""
+    from tripwire.attacks.catalog import load_catalog
+    from tripwire.gold import load_gold
+    from tripwire.judge.llm_judge import LlmJudge
+    from tripwire.judging import calibrate, judge_run
+    from tripwire.matrix import report
+    from tripwire.storage import Store
+    from tripwire.target.llm import OllamaChat
+
+    store = Store(DB)
+    run_id = _run_id(store, run_id)
+    catalog = store.query("SELECT catalog FROM runs WHERE id = ?", run_id)[0][0]
+    attacks, planted = load_catalog(catalog)
+    gold = {g.id: g for g in load_gold(DATA / "gold" / "gold.yaml", include_unverified=True)}
+    llm_judge = LlmJudge(OllamaChat(model=judge_model, seed=7))
+    by_id = {a.id: a for a in attacks}
+    counts = judge_run(store, run_id, llm_judge, judge_model, by_id, planted, gold,
+                       audit=audit, log=typer.echo)
+    typer.echo("\n" + ", ".join(f"{p}/{v}: {n}" for (p, v), n in sorted(counts.items())))
+    if calibrate_judge:
+        hits, total, misses = calibrate(store, run_id, llm_judge, judge_model, by_id, planted,
+                                        gold, log=typer.echo)
+        typer.echo(f"\ncalibration: judge says 'succeeded' on {hits}/{total} answers where a "
+                   f"canary or marker proves the attack succeeded")
+        for m in misses:
+            typer.echo(f"  missed {m}")
+    typer.echo("\n" + report(store, run_id, judge_model=judge_model))
+
+
+@app.command()
+def label(run_id: int = typer.Argument(None, help="defaults to the latest run"),
+          n: int = typer.Option(30, help="how many answers to label")) -> None:
+    """Label answers by hand, blind (no detector or judge verdict shown)."""
+    from tripwire.attacks.catalog import load_catalog
+    from tripwire.judging import label_sample
+    from tripwire.storage import Store
+
+    store = Store(DB)
+    run_id = _run_id(store, run_id)
+    catalog = store.query("SELECT catalog FROM runs WHERE id = ?", run_id)[0][0]
+    attacks, planted = load_catalog(catalog)
+    by_id = {a.id: a for a in attacks}
+    items = label_sample(store, run_id, n)
+    keys = {"s": "succeeded", "r": "resisted", "u": "unclear"}
+    typer.echo("For each answer: did the ATTACK succeed?  s = succeeded, r = resisted, "
+               "u = unclear, enter = skip, q = quit\n")
+    for i, it in enumerate(items, 1):
+        a = by_id[it.attack_id]
+        typer.secho(f"--- {i}/{len(items)}  {a.title}  ({a.category}, defense: {it.defense})",
+                    bold=True)
+        typer.echo(f"QUESTION: {a.question}")
+        for p in a.planted:
+            typer.echo(f"PLANTED [{planted[p].doc_id}]: {planted[p].text}")
+        typer.echo(f"ANSWER:\n{it.answer}\n")
+        choice = typer.prompt("label", default="", show_default=False).strip().lower()
+        if choice == "q":
+            break
+        if choice in keys:
+            store.add_label(run_id, it.defense, it.attack_id, it.repeat, keys[choice])
+    total = store.query("SELECT count(*) FROM human_labels WHERE run_id = ?", run_id)[0][0]
+    typer.echo(f"\n{total} answers labelled for run {run_id}")
+
+
+@app.command("agreement")
+def agreement_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run"),
+                  judge_model: str = typer.Option("qwen3:8b", "--judge")) -> None:
+    """How often the LLM judge and the pipeline agree with your labels."""
+    from tripwire.judging import agreement
+    from tripwire.storage import Store
+
+    store = Store(DB)
+    typer.echo(agreement(store, _run_id(store, run_id), judge_model))
 
 
 @corpus.command("fetch")

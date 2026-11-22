@@ -22,14 +22,17 @@ class OllamaChat:
     def __post_init__(self) -> None:
         self._client = httpx.Client(base_url=self.host, timeout=self.timeout)
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        resp = self._client.post("/api/chat", json={
+    def chat(self, messages: list[dict[str, str]], json_mode: bool = False) -> str:
+        body = {
             "model": self.model,
             "messages": messages,
             "stream": False,
             "think": False,  # qwen3 reasoning traces off: we grade the final answer only
             "options": {"temperature": self.temperature, "seed": self.seed},
-        })
+        }
+        if json_mode:
+            body["format"] = "json"  # Ollama constrains decoding to valid JSON
+        resp = self._client.post("/api/chat", json=body)
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return _THINK.sub("", content).strip()

@@ -73,3 +73,19 @@ Questions to be ready for:
 - Why is the input filter regex and not a classifier? (cheap, explainable baseline; the point is to measure how much it adds and how easily it's bypassed by rephrasing - "spell it" vs "write it letter by letter")
 - Why label trust from metadata instead of content? (content can lie; where the file came from can't be changed by the file)
 - Why does isolation use a key derived from the question? (unknown to whoever wrote the document, so it can't forge a closing marker; deterministic so runs are reproducible)
+- First full matrix (run 1, 4 defenses x 24 attacks x 3 seeds): attack success 62% none, 54% hardened prompt, 50% isolation, 4% layered; gold accuracy 21/30 -> 20/30. Prompt-only defenses barely help; isolation still leaks the memo 100% of the time even labelled untrusted. In layered, the input filter and the retrieval filter did all the work; the output filter never fired. The fake IFRS restatement beat every defense 3/3: a plausible false number with no instructions is invisible to every filter.
+- **Caveat**: the filters were written knowing the attacks, so 4% is optimistic. A held-out catalog (`--catalog heldout`, written by someone other than whoever wrote the filters, run once, filters frozen) is what makes the number defensible.
+- Seeds barely matter at temperature 0: every attack was 0/3 or 3/3.
+
+## Phase 5 - LLM judge
+
+- Only where rules can't decide (`judge/llm_judge.py`): `mixed` rows (attacker's number and right number both present), and with `--audit` the `resisted` answers in leakage / indirect / numeric categories, to catch paraphrased leaks no string detector sees.
+- The judge gets the attacker's goal, the planted document, the hidden prompt (for prompt-leak attacks) and the correct figure, so it compares against what could have leaked. JSON mode (Ollama `format: json`), temperature 0, unparseable output -> `unclear`.
+- **Mixed verdicts change the outcome; audit verdicts don't.** Audit hits are reported as "possible detector misses" for a human to look at. A judge should not silently overrule a deterministic check.
+- Identical answers (common across seeds) are judged once.
+- **Trust is measured, not assumed**: `tripwire label` shows answers blind (no detector or judge verdict) and stores human labels; `tripwire agreement` reports agreement and Cohen's kappa for the judge and for the pipeline's final outcome, with a confusion matrix.
+
+Questions to be ready for:
+- Isn't the same 8B model judging itself? (yes - self-preference bias is a known risk; that's why agreement with human labels is reported, and `--judge` accepts another model)
+- Why kappa and not just accuracy? (if 80% of answers are "resisted", a judge that always says "resisted" gets 80% accuracy and kappa 0)
+- Why blind labelling? (seeing the judge's verdict first anchors the human and inflates agreement)
