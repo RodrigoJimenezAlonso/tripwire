@@ -66,8 +66,16 @@ class VectorIndex:
             for c, v in zip(chunks, vectors, strict=True)
         ])
 
+    def embed_query(self, query: str) -> list[float]:
+        return next(iter(self.embedder.query_embed(query))).tolist()
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        return [v.tolist() for v in self.embedder.embed(texts)]
+
     def search(self, query: str, k: int = 5, doc_id: str | None = None) -> list[Hit]:
-        qvec = next(iter(self.embedder.query_embed(query))).tolist()
+        return self.search_vector(self.embed_query(query), k=k, doc_id=doc_id)
+
+    def search_vector(self, qvec: list[float], k: int = 5, doc_id: str | None = None) -> list[Hit]:
         flt = None
         if doc_id:
             flt = models.Filter(must=[models.FieldCondition(

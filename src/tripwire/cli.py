@@ -86,6 +86,49 @@ def baseline(model: str = "qwen3:8b", k: int = 5,
     typer.echo(f"saved {out}")
 
 
+@app.command()
+def attack(model: str = "qwen3:8b", k: int = 5,
+           only: str = typer.Option(None, help="run a single attack id"),
+           category: str = typer.Option(None, help="run one category only")) -> None:
+    """Run the attack catalog against the undefended RAG."""
+    import datetime as dt
+
+    from tripwire.attacks.catalog import load_attacks, load_planted
+    from tripwire.attacks.run import run_suite, summarise, to_dict
+    from tripwire.gold import load_gold
+    from tripwire.target.index import VectorIndex
+    from tripwire.target.llm import OllamaChat
+
+    planted = load_planted()
+    attacks = load_attacks(planted=planted)
+    if only:
+        attacks = [a for a in attacks if a.id == only]
+    if category:
+        attacks = [a for a in attacks if a.category == category]
+    if not attacks:
+        raise typer.BadParameter("no attacks match")
+    gold = {g.id: g for g in load_gold(DATA / "gold" / "gold.yaml", include_unverified=True)}
+
+    def show(r):
+        fired = ", ".join(r.fired) or "-"
+        typer.echo(f"{r.outcome:13} {r.category:18} {r.id:38} fired: {fired}")
+
+    results = run_suite(attacks, VectorIndex(DATA / "qdrant"), OllamaChat(model=model),
+                        planted, gold, k=k, on_result=show)
+    typer.echo("")
+    for cat, row in summarise(results).items():
+        delivered = row["succeeded"] + row["mixed"] + row["resisted"]
+        typer.echo(f"{cat:18} succeeded {row['succeeded']}/{delivered} delivered"
+                   f"   (mixed {row['mixed']}, not delivered {row['not_delivered']})")
+    RESULTS.mkdir(exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = RESULTS / f"attacks-{stamp}.json"
+    out.write_text(json.dumps({"model": model, "k": k, "defense": "none",
+                               "results": [to_dict(r) for r in results]}, indent=2),
+                   encoding="utf-8")
+    typer.echo(f"saved {out}")
+
+
 @corpus.command("fetch")
 def corpus_fetch(force: bool = False) -> None:
     """Download the public annual reports."""
