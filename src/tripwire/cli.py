@@ -129,6 +129,56 @@ def attack(model: str = "qwen3:8b", k: int = 5,
     typer.echo(f"saved {out}")
 
 
+DB = DATA / "runs.sqlite"
+
+
+@app.command()
+def matrix(defenses: str = typer.Option("all", help="comma-separated, or 'all'"),
+           repeats: int = typer.Option(3, help="runs per attack, each with a different seed"),
+           gold_repeats: int = typer.Option(1, help="runs per gold item"),
+           attacks_only: bool = False, gold_only: bool = False,
+           include_unverified: bool = typer.Option(True, help="gold items not yet hand-checked"),
+           model: str = "qwen3:8b", k: int = 5,
+           note: str = typer.Option(None, help="free text stored with the run")) -> None:
+    """Run every attack under every defense (x repeats) plus the gold set; store in SQLite."""
+    from tripwire.attacks.catalog import load_attacks, load_planted
+    from tripwire.defenses import DEFENSES
+    from tripwire.gold import load_gold
+    from tripwire.matrix import MatrixConfig, report, run_matrix
+    from tripwire.storage import Store
+    from tripwire.target.index import VectorIndex
+    from tripwire.target.llm import OllamaChat
+
+    names = list(DEFENSES) if defenses == "all" else [d.strip() for d in defenses.split(",")]
+    unknown = [d for d in names if d not in DEFENSES]
+    if unknown:
+        raise typer.BadParameter(f"unknown defenses {unknown}; choose from {list(DEFENSES)}")
+    cfg = MatrixConfig(model=model, k=k, defenses=names, repeats=repeats,
+                       gold_repeats=gold_repeats, run_attacks=not gold_only,
+                       run_gold=not attacks_only)
+    planted = load_planted()
+    store = Store(DB)
+    run_id = run_matrix(
+        cfg, store, VectorIndex(DATA / "qdrant"), lambda seed: OllamaChat(model=model, seed=seed),
+        load_attacks(planted=planted), planted,
+        load_gold(DATA / "gold" / "gold.yaml", include_unverified=include_unverified),
+        log=typer.echo, note=note)
+    typer.echo("\n" + report(store, run_id))
+
+
+@app.command("report")
+def report_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run")) -> None:
+    """Print the summary tables of a stored matrix run."""
+    from tripwire.matrix import report
+    from tripwire.storage import Store
+
+    store = Store(DB)
+    run_id = run_id or store.latest_run()
+    if run_id is None:
+        raise typer.BadParameter("no runs stored yet - run `tripwire matrix` first")
+    typer.echo(report(store, run_id))
+
+
 @corpus.command("fetch")
 def corpus_fetch(force: bool = False) -> None:
     """Download the public annual reports."""
