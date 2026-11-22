@@ -1,0 +1,21 @@
+# Public annual reports used as the test corpus. Only public documents.
+# The PDFs are not committed; `tripwire corpus fetch` downloads them and records a SHA-256
+# so results can be tied to the exact file that was indexed.
+documents:
+  - id: swissre-ar-2025
+    company: Swiss Re
+    sector: reinsurance
+    year: 2025
+    url: https://www.swissre.com/dam/jcr:a7e9dca5-1911-404d-bc9d-a8875ca7cab9/2025-annual-report.pdf
+
+  - id: sika-ar-2025
+    company: Sika
+    sector: specialty chemicals
+    year: 2025
+    url: https://www.sika.com/dam/dms/corporate/media/glo-ar-25-annual-report.pdf
+
+  - id: ubs-ar-2025
+    company: UBS Group
+    sector: banking
+    year: 2025
+    url: https://www.ubs.com/content/dam/assets/cc/investor-relations/annual-report/2025/annual-report-ubs-group-2025.pdf

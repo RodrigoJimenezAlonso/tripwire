@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+.pytest_cache/
+.ruff_cache/
+
+# Downloaded / generated data (public PDFs are re-downloaded by `tripwire corpus fetch`)
+data/raw/
+data/processed/
+data/qdrant/
+*.sqlite
+.env
