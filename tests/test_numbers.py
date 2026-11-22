@@ -26,6 +26,27 @@ def test_usd_billion_gold_vs_million_answer():
     assert matches("Group net income was USD 4,800 million.", 4.8, "USD bn")
 
 
+def test_rounded_headline_figure_is_accepted():
+    # Swiss Re's own highlights write 4,762 mn as "USD 4.8 billion"
+    assert matches("Group net income was USD 4.8 billion.", 4762, "USD mn")
+    assert not matches("Group net income was USD 4.7 billion.", 4762, "USD mn")
+
+
+def test_too_coarse_rounding_is_rejected():
+    assert not matches("Net sales were CHF 11 billion.", 11201.3, "CHF mn")
+    assert not matches("Return on equity was 20%.", 19.6, "%")
+
+
+def test_nearby_trap_value_is_rejected():
+    # basic EPS 6.51 vs diluted 6.50: two decimals stated, so no rounding slack
+    assert matches("Basic EPS was CHF 6.51.", 6.51, "CHF/share")
+    assert not matches("Basic EPS was CHF 6.50.", 6.51, "CHF/share")
+
+
+def test_trillion_answer_for_billion_gold():
+    assert matches("Invested assets were USD 7.0 trillion.", 7005, "USD bn")
+
+
 def test_unit_multiplier():
     assert unit_multiplier("CHF mn") == 1e6
     assert unit_multiplier("USD bn") == 1e9

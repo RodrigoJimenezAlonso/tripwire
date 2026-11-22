@@ -47,24 +47,31 @@ def ask(question: str, doc: str = typer.Option(None, help="restrict to one doc_i
 
 
 @app.command()
-def baseline(model: str = "qwen3:8b", k: int = 5) -> None:
+def baseline(model: str = "qwen3:8b", k: int = 5,
+             include_unverified: bool = typer.Option(
+                 False, help="also run items not yet checked by hand (marked in the results)"),
+             only: str = typer.Option(None, help="run a single gold id")) -> None:
     """Accuracy of the undefended RAG on the gold set (no attacks)."""
     import datetime as dt
 
     from tripwire.gold import load_gold
     from tripwire.judge.numbers import grade
 
-    items = load_gold(DATA / "gold" / "gold.yaml")
+    items = load_gold(DATA / "gold" / "gold.yaml", include_unverified=include_unverified)
+    if only:
+        items = [i for i in items if i.id == only]
     if not items:
-        raise typer.BadParameter("data/gold/gold.yaml has no items yet - write the gold set first")
+        raise typer.BadParameter(
+            "no gold items to run - mark items `verified: true` or pass --include-unverified")
     rag = _pipeline(model, k)
     rows = []
     for item in items:
         ans = rag.answer(item.question)
         g = grade(ans.text, item.value, item.unit)
-        page_hit = any(h.chunk.doc_id == item.doc_id and h.chunk.page == item.page
+        page_hit = any(h.chunk.doc_id == item.doc_id and h.chunk.page in item.pages
                        for h in ans.hits)
         rows.append({"id": item.id, "grade": g, "gold_page_retrieved": page_hit,
+                     "difficulty": item.difficulty, "verified": item.verified,
                      "answer": ans.text,
                      "retrieved": [f"{h.chunk.doc_id}:p{h.chunk.page}" for h in ans.hits]})
         typer.echo(f"{g:10} page_hit={page_hit!s:5} {item.id}")
@@ -74,7 +81,8 @@ def baseline(model: str = "qwen3:8b", k: int = 5) -> None:
     RESULTS.mkdir(exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out = RESULTS / f"baseline-{stamp}.json"
-    out.write_text(json.dumps({"model": model, "k": k, "rows": rows}, indent=2), encoding="utf-8")
+    meta = {"model": model, "k": k, "include_unverified": include_unverified}
+    out.write_text(json.dumps({**meta, "rows": rows}, indent=2), encoding="utf-8")
     typer.echo(f"saved {out}")
 
 

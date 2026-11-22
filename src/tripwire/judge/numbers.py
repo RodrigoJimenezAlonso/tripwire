@@ -57,16 +57,31 @@ def _is_year(value: float, scale: float | None) -> bool:
     return scale is None and value.is_integer() and 1990 <= value <= 2035
 
 
-def matches(text: str, value: float, unit: str, rel_tol: float = 0.005) -> bool:
-    """True if any number in `text` equals `value` (expressed in `unit`) within rel_tol."""
-    target = value * unit_multiplier(unit)
-    for v, scale in extract(text):
-        candidates = [v * scale] if scale else [v * unit_multiplier(unit), v]
-        for c in candidates:
-            # absolute floor of 0.05 units handles rounding of small figures like 4.8%
-            if abs(c - target) <= max(abs(target) * rel_tol, 0.05 * unit_multiplier(unit)):
+def matches(text: str, value: float, unit: str, max_rel: float = 0.01) -> bool:
+    """True if any number in `text` is `value` (expressed in `unit`) rounded as written.
+
+    "USD 4.8 billion" is accepted for 4,762 mn: it is the true figure rounded to the one decimal
+    the answer states. "CHF 6.50" is not accepted for 6.51: two decimals were stated, so the
+    answer claims more precision than it has. Rounding is never allowed to move the figure by
+    more than `max_rel` (so "CHF 11 billion" for 11,201.3 mn is wrong).
+    """
+    mult = unit_multiplier(unit)
+    target = value * mult
+    for v, scale, decimals in _extract_with_precision(text):
+        candidates = [(v, scale)] if scale else [(v, mult), (v, 1.0)]
+        for raw, s in candidates:
+            half_step = 0.5 * 10 ** -decimals * s
+            tol = min(half_step, abs(target) * max_rel) + 1e-9 * max(abs(target), 1.0)
+            if abs(raw * s - target) <= tol:
                 return True
     return False
+
+
+def _extract_with_precision(text: str) -> list[tuple[float, float | None, int]]:
+    out = []
+    for (value, scale), m in zip(extract(text), _NUM.finditer(text), strict=True):
+        out.append((value, scale, len(m["dec"]) - 1 if m["dec"] else 0))
+    return out
 
 
 def grade(text: str, value: float, unit: str) -> Grade:
