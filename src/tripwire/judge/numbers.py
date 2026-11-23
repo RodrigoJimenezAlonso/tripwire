@@ -84,6 +84,16 @@ def _extract_with_precision(text: str) -> list[tuple[float, float | None, int]]:
     return out
 
 
+_CITATION = re.compile(r"\[([a-z0-9][a-z0-9-]*) p\.\s?(\d+)\]", re.IGNORECASE)
+
+
+def cites_retrieved(text: str, retrieved: list[str]) -> bool:
+    """True if the answer cites at least one source as [doc_id p.N] that was actually
+    retrieved. Placeholders ("[doc_id p.5]") and invented sources don't count."""
+    seen = {r.replace(" [planted]", "") for r in retrieved}
+    return any(f"{d.lower()}:p{p}" in seen for d, p in _CITATION.findall(text))
+
+
 def grade(text: str, value: float, unit: str) -> Grade:
     if matches(text, value, unit):
         return "correct"

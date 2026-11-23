@@ -23,6 +23,11 @@ from tripwire.target.rag import Chat, RagPipeline
 BASE_SEED = 7
 
 
+def _pct(part: int, whole: int) -> int:
+    # half rounds up, like Math.round in the dashboard, so CLI and web never disagree
+    return int(100 * part / whole + 0.5)
+
+
 @dataclass
 class MatrixConfig:
     model: str
@@ -119,7 +124,7 @@ def report(store: Store, run_id: int, judge_model: str | None = None) -> str:
                 if not r or not r["d"]:
                     row += f"{'-':>18}"
                     continue
-                txt = f"{r['s']}/{r['d']} {100 * r['s'] / r['d']:3.0f}%" + (
+                txt = f"{r['s']}/{r['d']} {_pct(r['s'], r['d']):3d}%" + (
                     f" +{r['m']}" if r["m"] else "")
                 row += f"{txt:>18}"
             lines.append(row)
@@ -130,7 +135,7 @@ def report(store: Store, run_id: int, judge_model: str | None = None) -> str:
         row = f"{'ALL':20}"
         for d in defenses:
             r = t.get(d)
-            txt = f"{r['s']}/{r['d']} {100 * r['s'] / r['d']:3.0f}%" if r and r["d"] else "-"
+            txt = f"{r['s']}/{r['d']} {_pct(r['s'], r['d']):3d}%" if r and r["d"] else "-"
             row += f"{txt:>18}"
         lines.append(row)
         if judge_model:
@@ -143,18 +148,35 @@ def report(store: Store, run_id: int, judge_model: str | None = None) -> str:
             lines += [f"  [{m['defense']} #{m['repeat']}] {m['attack_id']}: {m['reason']}"
                       for m in misses]
 
-    gold = store.query(
-        "SELECT defense, count(*) AS n, sum(grade = 'correct') AS c, sum(grade = 'wrong') AS w, "
-        "  sum(grade = 'blocked') AS b, sum(page_hit) AS p "
-        "FROM gold_results WHERE run_id = ? GROUP BY defense", run_id)
-    if gold:
-        g = {r["defense"]: r for r in gold}
+    g = gold_summary(store, run_id)
+    if g:
         lines.append("\ngold set under each defense")
-        for label, key in (("correct", "c"), ("wrong", "w"), ("blocked", "b"),
-                           ("page retrieved", "p")):
+        for label, key in (("correct", "correct"), ("wrong", "wrong"), ("blocked", "blocked"),
+                           ("page retrieved", "page_hit"), ("cites a real source", "cited")):
             row = f"{label:20}"
             for d in defenses:
                 r = g.get(d)
                 row += f"{(f'{r[key]}/{r["n"]}' if r else '-'):>18}"
             lines.append(row)
     return "\n".join(lines)
+
+
+def gold_summary(store: Store, run_id: int) -> dict[str, dict[str, int]]:
+    """Gold accuracy per defense. `cited` counts answers that cite a source that was really
+    retrieved: a defense can keep figures right while breaking the citation that lets a
+    reader check them."""
+    import json
+
+    from tripwire.judge.numbers import cites_retrieved
+
+    out: dict[str, dict[str, int]] = {}
+    for r in store.query("SELECT defense, grade, page_hit, answer, retrieved FROM gold_results "
+                         "WHERE run_id = ?", run_id):
+        row = out.setdefault(r["defense"], {"n": 0, "correct": 0, "wrong": 0, "blocked": 0,
+                                            "page_hit": 0, "cited": 0})
+        row["n"] += 1
+        if r["grade"] in ("correct", "wrong", "blocked"):
+            row[r["grade"]] += 1
+        row["page_hit"] += r["page_hit"]
+        row["cited"] += cites_retrieved(r["answer"], json.loads(r["retrieved"]))
+    return out

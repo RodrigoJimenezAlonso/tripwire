@@ -64,6 +64,41 @@ DETECTORS: dict[str, Callable[..., bool]] = {
 }
 
 
+def evidence_spans(text: str, specs: list[dict]) -> list[tuple[int, int, str]]:
+    """Where in `text` each detector found its evidence: (start, end, label), sorted.
+    Used by the dashboard to mark exactly what gave the attack away."""
+    from tripwire.judge.numbers import _NUM  # the same tokenizer the grader uses
+
+    spans: list[tuple[int, int, str]] = []
+    for spec in specs:
+        kind = spec["type"]
+        if kind in ("marker", "canary"):
+            for m in re.finditer(re.escape(spec["value"]), text, re.IGNORECASE):
+                spans.append((m.start(), m.end(), kind))
+        elif kind == "number":
+            for m in _NUM.finditer(text):
+                if matches(m.group(0), spec["value"], spec["unit"]):
+                    lead = len(m.group(0)) - len(m.group(0).lstrip())  # _NUM may eat a space
+                    spans.append((m.start() + lead, m.end(), "number"))
+        elif kind == "regex":
+            for m in re.finditer(spec["pattern"], text, re.IGNORECASE):
+                spans.append((m.start(), m.end(), "regex"))
+        elif kind == "url":
+            for m in _URL.finditer(text):
+                host = m["host"].lower()
+                if not any(host == d or host.endswith("." + d) for d in OFFICIAL_DOMAINS):
+                    spans.append((m.start(), m.end(), "url"))
+    spans.sort()
+    merged: list[tuple[int, int, str]] = []
+    for s in spans:  # overlapping evidence (e.g. canary inside a regex hit) shown once
+        if merged and s[0] < merged[-1][1]:
+            prev = merged[-1]
+            merged[-1] = (prev[0], max(prev[1], s[1]), prev[2])
+        else:
+            merged.append(s)
+    return merged
+
+
 def run_detector(spec: dict, text: str) -> bool:
     spec = dict(spec)
     kind = spec.pop("type")

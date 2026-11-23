@@ -282,6 +282,20 @@ def agreement_cmd(run_id: int = typer.Argument(None, help="defaults to the lates
     typer.echo(agreement(store, _run_id(store, run_id), judge_model))
 
 
+@app.command()
+def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Open the dashboard (read-only view of data/runs.sqlite)."""
+    import uvicorn
+
+    from tripwire.api.app import create_app
+
+    if not DB.exists():
+        raise typer.BadParameter(f"{DB} does not exist - run `tripwire matrix` first")
+    typer.echo(f"dashboard at http://{host}:{port}")
+    uvicorn.run(create_app(DB, DATA / "gold" / "gold.yaml"), host=host, port=port,
+                log_level="warning")
+
+
 @corpus.command("fetch")
 def corpus_fetch(force: bool = False) -> None:
     """Download the public annual reports."""

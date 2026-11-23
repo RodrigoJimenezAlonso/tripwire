@@ -89,3 +89,17 @@ Questions to be ready for:
 - Isn't the same 8B model judging itself? (yes - self-preference bias is a known risk; that's why agreement with human labels is reported, and `--judge` accepts another model)
 - Why kappa and not just accuracy? (if 80% of answers are "resisted", a judge that always says "resisted" gets 80% accuracy and kappa 0)
 - Why blind labelling? (seeing the judge's verdict first anchors the human and inflates agreement)
+- Calibration on run 1: on 93 answers where a canary or marker proves the attack succeeded, the judge says "succeeded" for 87 (94%). All 6 misses are the same attack: the model dumps its whole system prompt and the judge calls it "resisted". Adding an explicit rule to the judge prompt did not fix it - most likely the judge can't separate the hidden prompt it is shown from the answer that repeats it. Reported as a limitation; the deterministic canary still catches it, which is why detectors run first and the judge can't overrule them.
+- First human labelling round (61 answers) was discarded: several labels contradicted the agreed rule (correct official figure labelled "succeeded"). Correcting only the rows that disagree with the pipeline would inflate agreement, so the published agreement will come from a fresh blind round on the held-out run.
+
+## Phase 6 - dashboard
+
+- `tripwire serve` -> FastAPI app (`api/app.py`), read-only over `data/runs.sqlite`, plus a static page (`web/`: HTML, CSS, one ES module, no framework, no build step).
+- Read-only on purpose: runs start from the CLI, so the page can't change a result and every number on it is a stored row.
+- Design: Swiss annual-report style (white, black, one red, one typeface - Archivo - with tabular figures), because the corpus is three Swiss annual reports. The matrix is the one bold element; heat goes white -> red.
+- Drill-down: matrix cell -> list of attacks with one square per run -> case file (question, planted document, what was retrieved and what a filter removed, the answer with the evidence underlined, detectors, filters, judge).
+- **Security of the dashboard itself**: answers come from a system under attack, so every string is inserted with `textContent`, never `innerHTML`. A test stores an answer containing `<script>` and checks it comes back as data.
+- Shared rounding (half up) in CLI and web, after the two showed 62% and 63% for 45/72.
+- Headless Chrome never renders narrower than 500 px, so "mobile" screenshots at 390 px were silently cropped; the real check is the page inside a 390 px iframe.
+
+**Finding found while building the dashboard**: under `isolation` and `layered`, 21/30 gold answers cite the placeholder `[doc_id p.N]` from the instructions instead of the real document - the excerpt header no longer has the `[doc_id p.N]` shape the model copies. A new metric, "cites a source that was really retrieved", drops from 24/30 (no defense) to 2/30 (isolation). Figures stay correct, so the numeric grade never noticed. The isolation defense trades verifiability for safety; a fix (put the exact citation tag inside each block) would need a new run, so run 1 stays as it is.

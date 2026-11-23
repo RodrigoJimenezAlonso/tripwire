@@ -1,0 +1,435 @@
+/* Tripwire dashboard - Swiss annual-report style: white page, black type, one red. */
+
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --quiet: #6e6e6e;      /* secondary text, AA on white */
+  --rule: #dadada;
+  --red: #d8232a;        /* fills: heat cells, marks, rules */
+  --red-text: #d8232a;   /* red used as text, 5:1 on white */
+  --red-ink: #ffffff;    /* text on a strong red cell */
+  --focus: #1d4fd8;
+
+  --font: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.75rem;
+  --step-3: clamp(2rem, 1.2rem + 3.2vw, 3.5rem);
+
+  --gutter: clamp(1rem, 3vw, 2.5rem);
+  --row: 1.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #000000;
+    --ink: #ffffff;
+    --quiet: #a3a3a3;
+    --rule: #333333;
+    --red: #d8232a;      /* same fill as light: white type stays readable on every step */
+    --red-text: #ff6b6e; /* lighter red for type on black */
+    --red-ink: #ffffff;
+    --focus: #8fb0ff;
+  }
+  /* on black, mid-heat cells are dark red: white type reads on all of them */
+  .cell { color: var(--ink); }
+}
+
+* { box-sizing: border-box; }
+
+/* `display: grid` on a section must not undo the hidden attribute */
+[hidden] { display: none !important; }
+
+html { font-size: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 12-column grid; everything aligns to it, flush left */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  padding-inline: var(--gutter);
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+h1, h2, h3, p, dl, dd, ol { margin: 0; }
+
+h2 {
+  font-size: var(--step-1);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.note {
+  color: var(--quiet);
+  font-size: var(--step--1);
+  max-width: 62ch;
+}
+
+code { font-family: inherit; font-weight: 600; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  padding-block: calc(var(--row) * 2) var(--row);
+  align-items: end;
+}
+
+.brand { grid-column: 1 / span 7; }
+
+.wordmark {
+  font-size: var(--step-2);
+  font-weight: 700;
+  font-stretch: 80%;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin-top: 0.25rem;
+  max-width: 52ch;
+  color: var(--quiet);
+}
+
+.run-picker {
+  grid-column: 9 / span 4;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+  font-size: var(--step--1);
+}
+
+.run-picker label { color: var(--quiet); }
+
+.run-picker select {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 0.25rem 0.5rem;
+}
+
+.run-meta {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.75rem;
+}
+
+.run-meta dt { color: var(--quiet); }
+
+/* ---------- headline: the run's result, stated plainly ---------- */
+.lead {
+  padding-block: calc(var(--row) * 2) calc(var(--row) * 2.5);
+  border-top: 2px solid var(--ink);
+}
+
+.headline {
+  grid-column: 1 / span 10;
+  font-size: var(--step-3);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  max-width: 24ch;
+}
+
+.headline .quiet { color: var(--quiet); }
+
+/* ---------- matrix ---------- */
+.section-head {
+  grid-column: 1 / span 4;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  padding-bottom: var(--row);
+}
+
+.matrix {
+  grid-column: 5 / span 8;
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) repeat(var(--cols, 4), minmax(4.5rem, 1fr));
+  gap: 2px;
+}
+
+.matrix .colhead {
+  font-size: var(--step--1);
+  font-weight: 600;
+  font-stretch: 85%;
+  padding: 0 0.5rem 0.5rem;
+  align-self: end;
+}
+
+.matrix .rowhead {
+  font-size: var(--step--1);
+  font-weight: 600;
+  padding: 0.75rem 0.75rem 0.75rem 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+}
+
+.matrix .rowhead.total, .matrix .rowhead.gold { border-top: 2px solid var(--ink); }
+
+.cell {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--red) calc(var(--rate, 0) * 100%), var(--paper));
+  padding: 0.75rem;
+  min-height: 4.5rem;
+  display: grid;
+  align-content: space-between;
+  cursor: pointer;
+}
+
+.cell.strong { color: var(--red-ink); }
+
+.cell .rate {
+  font-size: var(--step-2);
+  font-weight: 650;
+  font-stretch: 80%;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.cell .count { font-size: var(--step--1); }
+
+.cell[aria-pressed="true"] {
+  outline: 3px solid var(--ink);
+  outline-offset: -3px;
+}
+
+.cell.empty { cursor: default; background: transparent; color: var(--quiet); }
+
+.static-cell {
+  padding: 0.75rem;
+  border-top: 2px solid var(--ink);
+  font-size: var(--step-1);
+  font-weight: 600;
+  font-stretch: 85%;
+}
+
+.static-cell.plain { border-top: 1px solid var(--rule); }
+
+.static-cell small {
+  display: block;
+  font-size: var(--step--1);
+  font-weight: 400;
+  color: var(--quiet);
+}
+
+.matrix .rowhead.total + .total-cell,
+.total-cell {
+  border-top: 2px solid var(--ink);
+}
+
+.scale {
+  grid-column: 5 / span 8;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: var(--step--1);
+  color: var(--quiet);
+}
+
+.scale-bar {
+  height: 0.5rem;
+  width: 10rem;
+  background: linear-gradient(to right, var(--paper), var(--red));
+  border: 1px solid var(--rule);
+}
+
+/* ---------- detail: attacks of a cell + case file ---------- */
+.detail {
+  margin-top: calc(var(--row) * 3);
+  padding-top: calc(var(--row) * 1.5);
+  border-top: 2px solid var(--ink);
+  row-gap: calc(var(--row) * 2);
+}
+
+.attacks {
+  grid-column: 1 / span 4;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.attack-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.attack-list li { border-bottom: 1px solid var(--rule); }
+
+.attack-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.625rem 0;
+  font: inherit;
+  font-size: var(--step--1);
+  color: var(--ink);
+  background: none;
+  border: 0;
+  text-align: left;
+}
+
+.attack-row .marks { display: flex; gap: 3px; }
+
+.mark-btn {
+  appearance: none;
+  padding: 3px;
+  margin: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.mark-btn[aria-current="true"] { outline: 2px solid var(--ink); outline-offset: 0; }
+
+.mark {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  vertical-align: -0.1em;
+}
+
+.mark.succeeded { background: var(--red); }
+.mark.resisted { border: 1.5px solid var(--ink); }
+.mark.mixed { background: linear-gradient(135deg, var(--red) 50%, transparent 50%);
+              border: 1.5px solid var(--red); }
+.mark.not_delivered { border: 1.5px dashed var(--quiet); }
+
+.key { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; }
+.key .mark { margin-right: -0.4rem; }
+
+.case {
+  grid-column: 6 / span 7;
+  display: grid;
+  gap: calc(var(--row) * 1.25);
+  align-content: start;
+}
+
+.case:focus { outline: none; }
+
+.case-head { display: grid; gap: 0.25rem; }
+
+.case-head h3 {
+  font-size: var(--step-2);
+  font-weight: 650;
+  font-stretch: 85%;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.verdict {
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+
+.verdict.succeeded { color: var(--red-text); }
+
+.field {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.field > dt {
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--quiet);
+  padding-top: 0.15rem;
+}
+
+.field > dd { max-width: 68ch; }
+
+.prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.planted {
+  border-left: 3px solid var(--red);
+  padding-left: 0.75rem;
+  font-size: var(--step--1);
+}
+
+.planted + .planted { margin-top: 0.75rem; }
+
+.source-list { list-style: none; padding: 0; font-size: var(--step--1); }
+.source-list .is-planted { color: var(--red-text); font-weight: 600; }
+.source-list .is-dropped { text-decoration: line-through; color: var(--quiet); }
+
+.facts { display: grid; gap: 0.35rem; font-size: var(--step--1); }
+
+/* the evidence that gave the attack away: underlined in red, drawn once when a case opens */
+mark.evidence {
+  color: inherit;
+  background: linear-gradient(var(--red), var(--red)) no-repeat left bottom / 100% 3px;
+  padding-bottom: 1px;
+  animation: draw 600ms ease-out both;
+}
+
+@keyframes draw { from { background-size: 0 3px; } to { background-size: 100% 3px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  mark.evidence { animation: none; }
+}
+
+.empty-state { color: var(--quiet); }
+
+.footer {
+  margin-top: calc(var(--row) * 4);
+  padding-block: var(--row) calc(var(--row) * 2);
+  border-top: 1px solid var(--rule);
+  color: var(--quiet);
+  font-size: var(--step--1);
+}
+
+.footer p { grid-column: 1 / span 8; max-width: 80ch; }
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 900px) {
+  .brand, .run-picker, .headline, .section-head, .matrix, .scale,
+  .attacks, .case, .footer p { grid-column: 1 / -1; }
+  .run-picker { margin-top: var(--row); }
+  .run-picker select { min-width: 0; max-width: 100%; }
+  /* grid items default to min-width: auto, which lets a wide table push the whole page */
+  .brand, .run-picker, .headline, .section-head, .matrix, .attacks, .case { min-width: 0; }
+  .matrix { overflow-x: auto; }
+}
+
+@media (max-width: 560px) {
+  .matrix { grid-template-columns: minmax(7rem, 1.2fr) repeat(var(--cols, 4), minmax(3.75rem, 1fr)); }
+  .cell { padding: 0.5rem; min-height: 3.75rem; }
+  .cell .rate { font-size: var(--step-1); }
+  .static-cell { font-size: var(--step-0); padding: 0.5rem; }
+  .field { grid-template-columns: 1fr; }
+  .headline { font-size: 1.75rem; }
+}

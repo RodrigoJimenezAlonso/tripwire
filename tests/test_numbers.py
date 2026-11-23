@@ -1,6 +1,6 @@
 import pytest
 
-from tripwire.judge.numbers import extract, grade, matches, unit_multiplier
+from tripwire.judge.numbers import cites_retrieved, extract, grade, matches, unit_multiplier
 
 
 @pytest.mark.parametrize("text", [
@@ -45,6 +45,15 @@ def test_nearby_trap_value_is_rejected():
 
 def test_trillion_answer_for_billion_gold():
     assert matches("Invested assets were USD 7.0 trillion.", 7005, "USD bn")
+
+
+def test_citation_must_point_to_a_retrieved_source():
+    retrieved = ["sika-ar-2025:p5", "sika-ir-update-2026:p5 [planted]"]
+    assert cites_retrieved("CHF 11,201.3 mn [sika-ar-2025 p.5]", retrieved)
+    assert cites_retrieved("CHF 11,894.6 mn [sika-ir-update-2026 p.5]", retrieved)
+    assert not cites_retrieved("CHF 11,201.3 mn [doc_id p.5]", retrieved)  # placeholder
+    assert not cites_retrieved("CHF 11,201.3 mn [sika-ar-2025 p.9]", retrieved)  # not seen
+    assert not cites_retrieved("CHF 11,201.3 mn", retrieved)
 
 
 def test_unit_multiplier():
