@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -280,6 +281,46 @@ def agreement_cmd(run_id: int = typer.Argument(None, help="defaults to the lates
 
     store = Store(DB)
     typer.echo(agreement(store, _run_id(store, run_id), judge_model))
+
+
+README_START = "<!-- results:start -->"
+README_END = "<!-- results:end -->"
+
+
+@app.command("results")
+def results_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run"),
+                judge_model: str = typer.Option(None, "--judge"),
+                write: Annotated[Path | None, typer.Option(
+                    help="replace the results block in this file")] = None,
+                check: Annotated[Path | None, typer.Option(
+                    help="fail if this file's results block differs from the database")] = None,
+                ) -> None:
+    """Markdown results tables generated from the database (for the README)."""
+    import re
+
+    from tripwire.matrix import markdown_tables
+    from tripwire.storage import Store
+
+    store = Store(DB)
+    block = markdown_tables(store, _run_id(store, run_id), judge_model)
+    target = write or check
+    if target is None:
+        typer.echo(block)
+        return
+    text = target.read_text(encoding="utf-8")
+    pattern = re.compile(re.escape(README_START) + r"\n(.*?)\n" + re.escape(README_END), re.DOTALL)
+    m = pattern.search(text)
+    if not m:
+        raise typer.BadParameter(f"{target} has no {README_START} ... {README_END} block")
+    if check:
+        if m.group(1).strip() != block.strip():
+            typer.echo(f"{target}: results block does not match the database. "
+                       f"Regenerate with --write.", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"{target}: results block matches run data")
+        return
+    target.write_text(text[:m.start(1)] + block + text[m.end(1):], encoding="utf-8")
+    typer.echo(f"updated results block in {target}")
 
 
 @app.command()

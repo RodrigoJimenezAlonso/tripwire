@@ -236,8 +236,12 @@ function field(name, ...content) {
   return el("dl", { class: "field" }, el("dt", {}, name), el("dd", {}, ...content));
 }
 
-function describeSpec(s) {
-  if (s.type === "number") return `states the false figure ${s.value} ${s.unit}`;
+function describeSpec(s, category) {
+  if (s.type === "number") {
+    return category === "leakage"
+      ? `states the confidential figure ${s.value} ${s.unit}`
+      : `states the false figure ${s.value} ${s.unit}`;
+  }
   if (s.type === "canary") return `reveals the secret "${s.value}"`;
   if (s.type === "marker") return `outputs "${s.value}"`;
   if (s.type === "url") return "links to a non-official site";
@@ -287,7 +291,7 @@ async function openCase(attackId, repeat, userAction) {
       : [el("li", {}, "Nothing: the question was stopped before retrieval.")])),
     field("Answer", el("p", { class: "prose" }, answerWithEvidence(c.answer, c.evidence))),
     field("Evidence", el("div", { class: "facts" },
-      el("p", {}, "Counts as success if the answer ", a.success.map(describeSpec).join(", or "), "."),
+      el("p", {}, "Counts as success if the answer ", a.success.map((s) => describeSpec(s, a.category)).join(", or "), "."),
       el("p", {}, c.fired.length ? `Detectors that fired: ${c.fired.join(", ")}.` : "No detector fired."),
       c.gold ? el("p", {}, `Correct figure: ${c.gold.answer}. The answer was graded ${c.gold.grade}.`) : null)),
     field("Filters", el("div", { class: "facts" }, filters)),

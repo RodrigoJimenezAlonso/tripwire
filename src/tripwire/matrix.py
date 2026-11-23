@@ -161,6 +161,65 @@ def report(store: Store, run_id: int, judge_model: str | None = None) -> str:
     return "\n".join(lines)
 
 
+CATEGORY_NAMES = {
+    "direct_injection": "Direct prompt injection",
+    "indirect_injection": "Instructions hidden in documents",
+    "leakage": "Confidential data leakage",
+    "numeric_poisoning": "False figures",
+}
+DEFENSE_NAMES = {
+    "none": "No defense",
+    "hardened_prompt": "Hardened prompt",
+    "isolation": "Isolated context",
+    "layered": "Layered filters",
+}
+
+
+def markdown_tables(store: Store, run_id: int, judge_model: str | None = None) -> str:
+    """The README results block, generated from the database so it can't drift from it."""
+    from tripwire.judging import final_outcomes_sql
+
+    run = store.query("SELECT * FROM runs WHERE id = ?", run_id)[0]
+    src = (f"({final_outcomes_sql(judge_model)})" if judge_model
+           else "(SELECT *, outcome AS final_outcome FROM attack_results)")
+    rows = store.query(
+        f"SELECT category, defense, sum(final_outcome = 'succeeded') AS s, "
+        f"sum(final_outcome != 'not_delivered') AS d FROM {src} WHERE run_id = ? "
+        f"GROUP BY category, defense", run_id)
+    order = ["none", "hardened_prompt", "isolation", "layered"]
+    defenses = sorted({r["defense"] for r in rows},
+                      key=lambda d: order.index(d) if d in order else 99)
+    cats = [c for c in CATEGORY_NAMES if any(r["category"] == c for r in rows)]
+    cell = {(r["category"], r["defense"]): r for r in rows}
+
+    def fmt(s: int, d: int) -> str:
+        return f"{_pct(s, d)}% ({s}/{d})" if d else "-"
+
+    head = "| | " + " | ".join(DEFENSE_NAMES.get(d, d) for d in defenses) + " |"
+    sep = "|---|" + "---:|" * len(defenses)
+    out = [f"Run {run_id}: model `{run['model']}`, k={run['k']}, {run['repeats']} runs per "
+           f"attack, catalog `{run['catalog']}`, commit `{run['git_commit']}`"
+           + (f", undecided cases judged by `{judge_model}`" if judge_model else "") + ".",
+           "", "Attack success rate (succeeded / delivered):", "", head, sep]
+    for c in cats:
+        out.append(f"| {CATEGORY_NAMES[c]} | " + " | ".join(
+            fmt(cell[(c, d)]["s"], cell[(c, d)]["d"]) if (c, d) in cell else "-"
+            for d in defenses) + " |")
+    tot = {d: (sum(cell[(c, d)]["s"] for c in cats if (c, d) in cell),
+               sum(cell[(c, d)]["d"] for c in cats if (c, d) in cell)) for d in defenses}
+    out.append("| **All attacks** | " + " | ".join(f"**{fmt(*tot[d])}**" for d in defenses)
+               + " |")
+
+    g = gold_summary(store, run_id)
+    if g:
+        out += ["", "Same system on the gold set (no attack):", "", head, sep]
+        for label, key in (("Answered correctly", "correct"), ("Confidently wrong", "wrong"),
+                           ("Cites a source it really retrieved", "cited")):
+            out.append(f"| {label} | " + " | ".join(
+                f"{g[d][key]}/{g[d]['n']}" if d in g else "-" for d in defenses) + " |")
+    return "\n".join(out)
+
+
 def gold_summary(store: Store, run_id: int) -> dict[str, dict[str, int]]:
     """Gold accuracy per defense. `cited` counts answers that cite a source that was really
     retrieved: a defense can keep figures right while breaking the citation that lets a
