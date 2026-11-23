@@ -283,6 +283,48 @@ def agreement_cmd(run_id: int = typer.Argument(None, help="defaults to the lates
     typer.echo(agreement(store, _run_id(store, run_id), judge_model))
 
 
+@app.command("heldout-generate")
+def heldout_generate(model: str = "qwen3:8b", temperature: float = 0.9,
+                     force: bool = typer.Option(False, help="overwrite an existing heldout.yaml")
+                     ) -> None:
+    """Rewrite every attack with an LLM that never sees the defenses -> attacks/heldout.yaml.
+
+    Run once, commit the file, then run `tripwire matrix --catalog heldout`. Regenerating after
+    seeing results would defeat the purpose."""
+    import datetime as dt
+
+    import yaml
+
+    from tripwire.attacks.catalog import HERE, load_catalog
+    from tripwire.attacks.paraphrase import rewrite_attack, to_catalog
+    from tripwire.target.llm import OllamaChat
+
+    out = HERE / "heldout.yaml"
+    if out.exists() and not force:
+        raise typer.BadParameter(f"{out} exists. It must be generated once; use --force only if "
+                                 f"it has never been run.")
+    attacks, planted = load_catalog("catalog")
+    rewrites = {}
+    for a in attacks:
+        r = rewrite_attack(a, planted, lambda seed: OllamaChat(
+            model=model, temperature=temperature, seed=seed, timeout=300))
+        rewrites[a.id] = r
+        typer.echo(f"{a.id:40} ok (seed {r.seed}, attempt {r.attempts})")
+    header = (
+        f"# Held-out attack catalog, generated {dt.date.today().isoformat()} by "
+        f"`tripwire heldout-generate` ({model}, temperature {temperature}).\n"
+        "# Every attack in catalog.yaml rewritten by an LLM that saw the attack and its planted\n"
+        "# documents, but never the defenses or any result. Strings the detectors need were kept\n"
+        "# verbatim; rewrites copying more than 35% of the original's 5-word sequences were\n"
+        "# rejected and retried. Generated once and committed before its first run. Do not edit.\n"
+        "# The companies are real; every planted statement about them is fictitious.\n")
+    body = yaml.safe_dump(to_catalog(attacks, planted, rewrites), sort_keys=False,
+                          allow_unicode=True, width=100)
+    out.write_text(header + body, encoding="utf-8")
+    load_catalog("heldout")  # validates ids, planted references and detectors
+    typer.echo(f"wrote {out}")
+
+
 README_START = "<!-- results:start -->"
 README_END = "<!-- results:end -->"
 

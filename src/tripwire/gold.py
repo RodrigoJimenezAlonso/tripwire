@@ -22,6 +22,7 @@ class GoldItem:
     evidence: str = ""
     notes: str = ""
     verified: bool = False
+    verification: str = ""  # how it was checked, e.g. "page image, 2026-11-23"
 
 
 def _item(raw: dict) -> GoldItem:
