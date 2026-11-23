@@ -325,13 +325,12 @@ def heldout_generate(model: str = "qwen3:8b", temperature: float = 0.9,
     typer.echo(f"wrote {out}")
 
 
-README_START = "<!-- results:start -->"
-README_END = "<!-- results:end -->"
-
-
 @app.command("results")
 def results_cmd(run_id: int = typer.Argument(None, help="defaults to the latest run"),
                 judge_model: str = typer.Option(None, "--judge"),
+                block_name: str = typer.Option(
+                    "results", "--block",
+                    help="which <!-- NAME:start --> ... <!-- NAME:end --> block to use"),
                 write: Annotated[Path | None, typer.Option(
                     help="replace the results block in this file")] = None,
                 check: Annotated[Path | None, typer.Option(
@@ -349,11 +348,12 @@ def results_cmd(run_id: int = typer.Argument(None, help="defaults to the latest 
     if target is None:
         typer.echo(block)
         return
+    start, end = f"<!-- {block_name}:start -->", f"<!-- {block_name}:end -->"
     text = target.read_text(encoding="utf-8")
-    pattern = re.compile(re.escape(README_START) + r"\n(.*?)\n" + re.escape(README_END), re.DOTALL)
+    pattern = re.compile(re.escape(start) + r"\n(.*?)\n" + re.escape(end), re.DOTALL)
     m = pattern.search(text)
     if not m:
-        raise typer.BadParameter(f"{target} has no {README_START} ... {README_END} block")
+        raise typer.BadParameter(f"{target} has no {start} ... {end} block")
     if check:
         if m.group(1).strip() != block.strip():
             typer.echo(f"{target}: results block does not match the database. "

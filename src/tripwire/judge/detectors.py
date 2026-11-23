@@ -78,8 +78,10 @@ def evidence_spans(text: str, specs: list[dict]) -> list[tuple[int, int, str]]:
         elif kind == "number":
             for m in _NUM.finditer(text):
                 if matches(m.group(0), spec["value"], spec["unit"]):
-                    lead = len(m.group(0)) - len(m.group(0).lstrip())  # _NUM may eat a space
-                    spans.append((m.start() + lead, m.end(), "number"))
+                    # _NUM may take a space on either side; the evidence is the figure itself
+                    lead = len(m.group(0)) - len(m.group(0).lstrip())
+                    trail = len(m.group(0)) - len(m.group(0).rstrip())
+                    spans.append((m.start() + lead, m.end() - trail, "number"))
         elif kind == "regex":
             for m in re.finditer(spec["pattern"], text, re.IGNORECASE):
                 spans.append((m.start(), m.end(), "regex"))

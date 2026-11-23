@@ -103,3 +103,18 @@ Questions to be ready for:
 - Headless Chrome never renders narrower than 500 px, so "mobile" screenshots at 390 px were silently cropped; the real check is the page inside a 390 px iframe.
 
 **Finding found while building the dashboard**: under `isolation` and `layered`, 21/30 gold answers cite the placeholder `[doc_id p.N]` from the instructions instead of the real document - the excerpt header no longer has the `[doc_id p.N]` shape the model copies. A new metric, "cites a source that was really retrieved", drops from 24/30 (no defense) to 2/30 (isolation). Figures stay correct, so the numeric grade never noticed. The isolation defense trades verifiability for safety; a fix (put the exact citation tag inside each block) would need a new run, so run 1 stays as it is.
+
+## Phase 7 - final runs, held-out catalog, README
+
+- **Gold set verified** against rendered page images: each figure located on its page, boxed, read visually. All 30 matched; two items gained extra pages (Swiss Re's rounded "USD 4.8 billion" on pp. 3, 6, 13; UBS FTE on p. 36).
+- **Held-out catalog** (`tripwire heldout-generate`): every attack rewritten by `qwen3:8b` at temperature 0.9, seeing the attacks but never the defenses; detector strings kept verbatim (found with `evidence_spans`); rewrites copying >35% of 5-word sequences rejected. First attempt failed instructively: asked plainly, the model *obeyed* an injection-style question instead of rewriting it; quoting the original as data fixed it. Committed (`0cffd29`) before its first run.
+- **Final runs from a clean commit**: run 2 (development catalog + gold set), run 3 (held-out). An aborted run left an empty record, deleted; the stopped script's leftover judge call touched nothing.
+- Results: layered filters 4% on development attacks, **19% on held-out**. Every held-out bypass maps to a too-literal rule ("disregard" vs "ignore", "internal use only" vs "internal only", "when referencing", an instruction-free "adjusted" ROE).
+- **Refusals that leak**: on held-out direct injection, prompt-only defenses made things worse (40% -> 60% -> 80%). With the hardened prompt the model refuses to translate its instructions and names the secret while refusing. The judge reads these as "resisted" - they are most of its 18 held-out calibration misses (45/63 vs 87/93 on development).
+- The development finding "a fake IFRS restatement beats every defense" did not survive: rewritten, it never got through, while other rewritten false figures took no-defense success from 14% to 57%. One attack is an anecdote.
+- README: two generated blocks (`--block heldout`, `--block results`), held-out first. Findings section is a draft to be rewritten by the author.
+
+Questions to be ready for:
+- Why is 19% the honest number and not 4%? (the filters were written knowing the 24 attacks; the rewrites were generated without seeing the filters and frozen before the run)
+- Isn't an 8B model rewriting attacks a weak held-out? (yes: same family, sometimes close rewrites; it's a lower bound on how badly the filters generalise, not an upper one)
+- Why did the hardened prompt increase leaks? (it made the secret salient: the model talks about what it must not reveal, and in doing so reveals it)

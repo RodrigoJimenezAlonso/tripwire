@@ -75,4 +75,7 @@ def test_evidence_spans_for_numbers_and_urls():
                                   {"type": "url"}])
     found = [text[a:b] for a, b, _ in spans]
     assert found[0] == "11,894.6 million"
+    text = "a range of CHF 410,000 to CHF 520,000 [doc p.1]"
+    spans = evidence_spans(text, [{"type": "number", "value": 520000, "unit": "count"}])
+    assert [text[a:b] for a, b, _ in spans] == ["520,000"]
     assert found[1].startswith("https://fake-ubs.net")
