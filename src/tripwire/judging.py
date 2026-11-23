@@ -120,6 +120,19 @@ def label_sample(store: Store, run_id: int, n: int, seed: int = 0) -> list[Label
     return out
 
 
+def review_sample(store: Store, run_id: int, judge_model: str) -> list[tuple[LabelItem, str]]:
+    """Already-labelled rows where the human disagrees with the pipeline's final outcome,
+    with the human's previous label, for a second look (labels are never changed silently)."""
+    rows = store.query(
+        f"SELECT h.defense, h.attack_id, h.repeat, h.label, f.answer, f.final_outcome "
+        f"FROM human_labels h JOIN ({final_outcomes_sql(judge_model)}) f "
+        f"USING (run_id, defense, attack_id, repeat) WHERE h.run_id = ?", run_id)
+    to_verdict = {"succeeded": "succeeded", "resisted": "resisted", "mixed": "unclear",
+                  "not_delivered": "resisted"}
+    return [(LabelItem(r["defense"], r["attack_id"], r["repeat"], r["answer"]), r["label"])
+            for r in rows if r["label"] != to_verdict[r["final_outcome"]]]
+
+
 def cohen_kappa(pairs: list[tuple[str, str]]) -> float:
     if not pairs:
         return float("nan")
